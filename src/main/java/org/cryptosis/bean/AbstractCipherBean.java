@@ -4,6 +4,7 @@ import org.cryptosis.CiphertextHeader;
 import org.cryptosis.generator.Nonce;
 
 import javax.crypto.SecretKey;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.Key;
@@ -30,37 +31,91 @@ public abstract class AbstractCipherBean implements CipherBean
   private Nonce nonce;
 
 
+  /**
+   * Sets the keystore containing encryption/decryption key(s). The keystore must contain a {@link SecretKey} entry
+   * whose alias is given by {@link #setKeyAlias(String)}, which will be used at the encryption key. It may contain
+   * additional symmetric keys to support, for example, key rollover where some existing ciphertexts have headers
+   * specifying a different key. In general all keys used for outstanding ciphertexts should be contained in the
+   * keystore.
+   *
+   * @param  keyStore  Keystore containing encryption key(s).
+   */
+  public void setKeyStore(final KeyStore keyStore)
+  {
+    this.keyStore = keyStore;
+  }
+
+
+  /**
+   * Sets the keystore entry alias used to locate the current encryption key.
+   *
+   * @param  keyAlias  Alias of {@link SecretKey} used for encryption.
+   */
+  public void setKeyAlias(final String keyAlias)
+  {
+    this.keyAlias = keyAlias;
+  }
+
+
+  /**
+   * Sets the password used to access the encryption key.
+   *
+   * @param  keyPassword  Encryption key password.
+   */
+  public void setKeyPassword(final String keyPassword)
+  {
+    this.keyPassword = keyPassword;
+  }
+
+
+  /**
+   * Sets the nonce/IV generation strategy.
+   *
+   * @param  nonce  Nonce generator.
+   */
+  public void setNonce(final Nonce nonce)
+  {
+    this.nonce = nonce;
+  }
+
+
   /** {@inheritDoc} */
   @Override
   public byte[] encrypt(final byte[] input)
   {
-    return process(new CiphertextHeader(nonce.generate(), keyAlias), lookupKey(keyAlias), true, input);
+    return process(new CiphertextHeader(nonce.generate(), keyAlias), true, input);
   }
 
 
   /** {@inheritDoc} */
   @Override
-  public void encrypt(InputStream input, OutputStream output)
+  public void encrypt(final InputStream input, final OutputStream output)
   {
-    process(new CiphertextHeader(nonce.generate(), keyAlias), lookupKey(keyAlias), true, input, output);
+    final CiphertextHeader header = new CiphertextHeader(nonce.generate(), keyAlias);
+    try {
+      output.write(header.encode());
+    } catch (IOException e) {
+      throw new RuntimeException("Error writing ciphertext header to output stream", e);
+    }
+    process(header, true, input, output);
   }
 
 
   /** {@inheritDoc} */
   @Override
-  public byte[] decrypt(byte[] input)
-  {
-    final CiphertextHeader header = CiphertextHeader.decode(input);
-    return process(header, lookupKey(header.getKeyName()), false, input);
-  }
-
-
-  /** {@inheritDoc} */
-  @Override
-  public void decrypt(InputStream input, OutputStream output)
+  public byte[] decrypt(final byte[] input)
   {
     final CiphertextHeader header = CiphertextHeader.decode(input);
-    process(header, lookupKey(header.getKeyName()), false, input, output);
+    return process(header, false, input);
+  }
+
+
+  /** {@inheritDoc} */
+  @Override
+  public void decrypt(final InputStream input, final OutputStream output)
+  {
+    final CiphertextHeader header = CiphertextHeader.decode(input);
+    process(header, false, input, output);
   }
 
 
@@ -90,13 +145,12 @@ public abstract class AbstractCipherBean implements CipherBean
    * Processes the given data under the action of the cipher.
    *
    * @param  header  Ciphertext header.
-   * @param  secretKey  Symmetric encryption key.
-   * @param  encryptionMode  True for encryption; false for decryption.
+   * @param  mode  True for encryption; false for decryption.
    * @param  input  Data to process by cipher.
    *
    * @return  Ciphertext data under encryption, plaintext data under decryption.
    */
-  protected abstract byte[] process(CiphertextHeader header, SecretKey secretKey, boolean encryptionMode, byte[] input);
+  protected abstract byte[] process(CiphertextHeader header, boolean mode, byte[] input);
 
 
   /**
@@ -104,10 +158,9 @@ public abstract class AbstractCipherBean implements CipherBean
    *
    * @param  header  Ciphertext header.
    * @param  secretKey  Symmetric encryption key.
-   * @param  encryptionMode  True for encryption; false for decryption.
+   * @param  mode  True for encryption; false for decryption.
    * @param  input  Stream containing input data.
    * @param  output  Stream that receives output of cipher.
    */
-  protected abstract void process(
-      CiphertextHeader header, SecretKey secretKey, boolean b, InputStream input, OutputStream output);
+  protected abstract void process(CiphertextHeader header, boolean mode, InputStream input, OutputStream output);
 }
